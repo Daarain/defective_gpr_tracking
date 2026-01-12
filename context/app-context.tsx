@@ -36,6 +36,11 @@ export interface Part {
   assignedTo?: string
   returnedDate?: string
   returnCondition?: "gpr" | "defective"
+  assignedDate?: string
+  category: string
+  name: string
+  description: string
+  partNumber: string
 }
 
 export interface Employee {
@@ -102,6 +107,11 @@ const initialParts: Part[] = [
     remarks: "Urgent replacement needed",
     status: "assigned",
     assignedTo: "e1",
+    assignedDate: "2024-01-16",
+    category: "Hydraulic",
+    name: "Hydraulic Valve Assembly",
+    description: "High-pressure hydraulic valve assembly for industrial machinery",
+    partNumber: "HV-001",
   },
   {
     id: "p2",
@@ -129,6 +139,12 @@ const initialParts: Part[] = [
     completedLocation: "Site B",
     remarks: "GPR returned successfully",
     status: "returned-gpr",
+    returnedDate: "2024-01-14",
+    returnCondition: "gpr",
+    category: "Motors",
+    name: "Servo Motor 5kW",
+    description: "High-precision servo motor for automated systems",
+    partNumber: "SM-002",
   },
   {
     id: "p3",
@@ -156,6 +172,10 @@ const initialParts: Part[] = [
     completedLocation: "",
     remarks: "Dead on arrival - needs investigation",
     status: "available",
+    category: "Electronics",
+    name: "Control Module PLC",
+    description: "Programmable logic controller for industrial automation",
+    partNumber: "CM-003",
   },
   {
     id: "p4",
@@ -184,6 +204,11 @@ const initialParts: Part[] = [
     remarks: "Installation in progress",
     status: "in-use",
     assignedTo: "e2",
+    assignedDate: "2024-01-22",
+    category: "Sensors",
+    name: "Pressure Sensor 500PSI",
+    description: "High-accuracy pressure sensor for hydraulic systems",
+    partNumber: "PS-004",
   },
   {
     id: "p5",
@@ -211,6 +236,12 @@ const initialParts: Part[] = [
     completedLocation: "Site A",
     remarks: "Defective part returned",
     status: "returned-defective",
+    returnedDate: "2024-01-09",
+    returnCondition: "defective",
+    category: "Mechanical",
+    name: "Bearing Assembly HD",
+    description: "Heavy-duty bearing assembly for industrial equipment",
+    partNumber: "BA-005",
   },
 ]
 

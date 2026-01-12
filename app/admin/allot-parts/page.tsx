@@ -60,7 +60,7 @@ const initialFormData: AllotFormData = {
 }
 
 export default function AllotPartsPage() {
-  const { employees } = useApp()
+  const { employees, assignPart, parts } = useApp()
   const [isOpen, setIsOpen] = useState(false)
   const [formData, setFormData] = useState<AllotFormData>(initialFormData)
   const [selectedEmployee, setSelectedEmployee] = useState("")
@@ -75,6 +75,21 @@ export default function AllotPartsPage() {
 
     setIsSubmitting(true)
     await new Promise((resolve) => setTimeout(resolve, 500))
+
+    // Create a new part with a unique ID
+    const newPartId = `p${Date.now()}`
+    
+    // In a real app, you would create a new part in the database
+    // For now, we'll just assign an existing part or show a success message
+    
+    // Find if there's an available part with the same part number
+    const existingPart = parts.find(p => p.partNo === formData.partNo && p.status === "available")
+    
+    if (existingPart) {
+      // Assign the existing available part
+      assignPart(existingPart.id, selectedEmployee, formData.remarks)
+    }
+    // If no existing part, in a real app you would create a new part here
 
     setFormData(initialFormData)
     setSelectedEmployee("")

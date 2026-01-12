@@ -15,7 +15,7 @@ export default function HomePage() {
             <div className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-lg bg-primary">
               <Icons.cog className="h-4 w-4 sm:h-5 sm:w-5 text-primary-foreground" />
             </div>
-            <span className="text-lg sm:text-xl font-bold text-foreground">Parts Manager</span>
+            <span className="text-lg sm:text-xl font-bold text-foreground">Stock Management</span>
           </div>
           <ThemeToggle />
         </div>
@@ -25,7 +25,7 @@ export default function HomePage() {
         <div className="w-full max-w-2xl">
           <div className="mb-8 sm:mb-10 text-center">
             <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold tracking-tight text-foreground text-balance">
-              Industrial Parts Management
+              Defective/GPR management
             </h1>
             <p className="mt-2 sm:mt-3 text-base sm:text-lg text-muted-foreground">
               Select your role to access the system
