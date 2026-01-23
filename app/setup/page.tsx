@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -23,7 +23,7 @@ export default function SetupPage() {
   const [hasExistingAdmin, setHasExistingAdmin] = useState(false)
 
   // Check if admin already exists
-  useState(() => {
+  useEffect(() => {
     const checkExistingAdmin = async () => {
       try {
         const admins = await getAdminsFromFirestore()

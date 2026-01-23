@@ -6,7 +6,7 @@ import { Header } from "@/components/layout/header"
 import { StatCard } from "@/components/ui/stat-card"
 import { StatusBadge } from "@/components/ui/status-badge"
 import { useApp } from "@/context/app-context"
-import type { Part } from "@/context/app-context"
+import type { Part, PartStatus } from "@/context/app-context"
 import { Icons } from "@/components/icons"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -133,12 +133,12 @@ export default function EmployeeDashboard() {
 
     try {
       // Determine condition based on faultyGPRPartSent field
-      const condition = partToReturn.faultyGPRPartSent === "GPR" ? "gpr" : "defective"
+      const condition: "gpr" | "defective" = partToReturn.faultyGPRPartSent === "GPR" ? "gpr" : "defective"
       const returnStatus = condition === "gpr" ? "returned-gpr" : "returned-defective"
       
       // Update the part directly with return status
-      const updatedPartData = {
-        status: returnStatus as any,
+      const updatedPartData: Partial<Part> = {
+        status: returnStatus as PartStatus,
         returnedDate: new Date().toISOString(),
         returnCondition: condition,
         returnStatus: "pending" as const,

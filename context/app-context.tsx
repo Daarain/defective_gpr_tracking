@@ -287,25 +287,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             pendingReturnApproval: "pending" as const,
           }
 
+          const partId = assignment.partId // Store partId to avoid undefined error
+          
           // Update part in Firestore
-          console.log("Updating part in Firestore with:", updatedPart)
-          await updatePartInFirestore(assignment.partId, updatedPart)
-          console.log("Part updated successfully in Firestore")
+          await updatePartInFirestore(partId, updatedPart)
 
           setParts((prev) =>
             prev.map((part) => {
-              if (part.id === assignment.partId) {
+              if (part.id === partId) {
                 return { ...part, ...updatedPart }
               }
               return part
             }),
           )
-          console.log("Part state updated locally")
-        } else {
-          console.log("Assignment not in state, skipping part update - will be synced on next refresh")
         }
-
-        console.log("=== RETURN PART FUNCTION COMPLETED SUCCESSFULLY ===")
       } catch (error) {
         console.error("=== FAILED TO PROCESS RETURN REQUEST ===")
         console.error("Error:", error)

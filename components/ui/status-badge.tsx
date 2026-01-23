@@ -2,7 +2,7 @@ import { cn } from "@/lib/utils"
 import type { PartStatus } from "@/context/app-context"
 
 interface StatusBadgeProps {
-  status: PartStatus | "active" | "completed" | "gpr" | "defective"
+  status: PartStatus | "active" | "completed" | "gpr" | "defective" | "pending-return"
   className?: string
 }
 
@@ -34,6 +34,10 @@ const statusConfig: Record<string, { label: string; className: string }> = {
   completed: {
     label: "Completed",
     className: "bg-muted text-muted-foreground border-border",
+  },
+  "pending-return": {
+    label: "Pending Return",
+    className: "bg-amber-500/10 text-amber-500 border-amber-500/20",
   },
   gpr: {
     label: "Good Part Return",
