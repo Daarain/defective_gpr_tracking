@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { useApp } from "@/context/app-context"
@@ -13,9 +13,6 @@ import { Icons } from "@/components/icons"
 import { ThemeToggle } from "@/components/ui/theme-toggle"
 import { authenticateEmployee } from "@/lib/firestore"
 
-const MAX_LOGIN_ATTEMPTS = 5
-const LOCKOUT_DURATION = 15 * 60 * 1000 // 15 minutes
-
 export default function EmployeeLoginPage() {
   const { setCurrentUser } = useApp()
   const router = useRouter()
@@ -25,61 +22,10 @@ export default function EmployeeLoginPage() {
   const [error, setError] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [loggedInUser, setLoggedInUser] = useState<{ id: string; username: string } | null>(null)
-  const [loginAttempts, setLoginAttempts] = useState(0)
-  const [isLockedOut, setIsLockedOut] = useState(false)
-  const [lockoutEndTime, setLockoutEndTime] = useState<number | null>(null)
-  const [remainingTime, setRemainingTime] = useState(0)
-
-  // Check for existing lockout on component mount
-  useEffect(() => {
-    const storedLockout = localStorage.getItem('employeeLoginLockout')
-    if (storedLockout) {
-      const lockoutEnd = parseInt(storedLockout, 10)
-      if (lockoutEnd > Date.now()) {
-        setIsLockedOut(true)
-        setLockoutEndTime(lockoutEnd)
-      } else {
-        localStorage.removeItem('employeeLoginLockout')
-        localStorage.removeItem('employeeLoginAttempts')
-      }
-    }
-
-    const storedAttempts = localStorage.getItem('employeeLoginAttempts')
-    if (storedAttempts) {
-      setLoginAttempts(parseInt(storedAttempts, 10))
-    }
-  }, [])
-
-  // Update remaining time countdown
-  useEffect(() => {
-    if (isLockedOut && lockoutEndTime) {
-      const interval = setInterval(() => {
-        const remaining = Math.max(0, lockoutEndTime - Date.now())
-        setRemainingTime(remaining)
-        
-        if (remaining === 0) {
-          setIsLockedOut(false)
-          setLockoutEndTime(null)
-          setLoginAttempts(0)
-          localStorage.removeItem('employeeLoginLockout')
-          localStorage.removeItem('employeeLoginAttempts')
-        }
-      }, 1000)
-
-      return () => clearInterval(interval)
-    }
-  }, [isLockedOut, lockoutEndTime])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setError("")
-    
-    // Check if locked out
-    if (isLockedOut) {
-      const minutes = Math.ceil(remainingTime / 60000)
-      setError(`Too many failed attempts. Please try again in ${minutes} minute${minutes !== 1 ? 's' : ''}.`)
-      return
-    }
     
     // Trim inputs
     const trimmedEmail = email.trim()
@@ -102,32 +48,13 @@ export default function EmployeeLoginPage() {
       const user = await authenticateEmployee(trimmedEmail, trimmedPassword)
 
       if (user) {
-        // Reset attempts on successful login
-        localStorage.removeItem('employeeLoginAttempts')
-        localStorage.removeItem('employeeLoginLockout')
-        setLoginAttempts(0)
-        
         setLoggedInUser(user)
         setCurrentUser({ role: "employee", id: user.id, name: user.username })
 
         await new Promise((resolve) => setTimeout(resolve, 1200))
         router.push("/employee")
       } else {
-        // Increment failed attempts
-        const newAttempts = loginAttempts + 1
-        setLoginAttempts(newAttempts)
-        localStorage.setItem('employeeLoginAttempts', newAttempts.toString())
-        
-        if (newAttempts >= MAX_LOGIN_ATTEMPTS) {
-          const lockoutEnd = Date.now() + LOCKOUT_DURATION
-          setIsLockedOut(true)
-          setLockoutEndTime(lockoutEnd)
-          localStorage.setItem('employeeLoginLockout', lockoutEnd.toString())
-          setError(`Too many failed attempts. Account locked for 15 minutes.`)
-        } else {
-          const remainingAttempts = MAX_LOGIN_ATTEMPTS - newAttempts
-          setError(`Invalid credentials. ${remainingAttempts} attempt${remainingAttempts !== 1 ? 's' : ''} remaining.`)
-        }
+        setError("Invalid credentials. Please try again.")
         setIsLoading(false)
       }
     } catch (error) {
