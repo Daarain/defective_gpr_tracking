@@ -123,7 +123,7 @@ export default function AllotPartsPage() {
         completeDate: formData.completeDate,
         completedLocation: formData.completedLocation,
         remarks: formData.remarks,
-        status: (selectedEmployee ? "assigned" : "available") as const,
+        status: selectedEmployee ? ("assigned" as const) : ("available" as const),
         assignedTo: selectedEmployee || "",
         assignedDate: selectedEmployee ? new Date().toISOString() : "",
         returnStatus: "pending" as const,
