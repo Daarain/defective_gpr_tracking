@@ -166,6 +166,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   // Load data from Firestore on mount
   useEffect(() => {
+    // Only run on client side
+    if (typeof window === "undefined") return
+    
     const loadData = async () => {
       try {
         const [firestoreEmployees, firestoreParts, firestoreAssignments] = await Promise.all([
