@@ -68,8 +68,8 @@ export default function AssignmentsPage() {
         const employee = getEmployeeById(assignment.employeeId)
         return (
           <div>
-            <p className="font-medium text-foreground">{employee?.name}</p>
-            <p className="text-sm text-muted-foreground">{employee?.department}</p>
+            <p className="font-medium text-foreground">{employee?.username}</p>
+            <p className="text-sm text-muted-foreground">ID: {employee?.employeeId}</p>
           </div>
         )
       },
@@ -171,7 +171,7 @@ export default function AssignmentsPage() {
                     <SelectContent>
                       {employees.map((employee) => (
                         <SelectItem key={employee.id} value={employee.id}>
-                          {employee.name} ({employee.department})
+                          {employee.username} (ID: {employee.employeeId})
                         </SelectItem>
                       ))}
                     </SelectContent>

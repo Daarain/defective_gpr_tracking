@@ -60,7 +60,7 @@ export default function PartsPage() {
       cell: (part: Part) => {
         if (!part.assignedTo) return <span className="text-muted-foreground">—</span>
         const employee = getEmployeeById(part.assignedTo)
-        return <span className="text-foreground">{employee?.name || "Unknown"}</span>
+        return <span className="text-foreground">{employee?.username || "Unknown"}</span>
       },
     },
   ]
