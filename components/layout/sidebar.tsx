@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { Icons } from "@/components/icons"
 import { useApp } from "@/context/app-context"
@@ -16,13 +16,14 @@ interface NavItem {
 
 const adminNav: NavItem[] = [
   { title: "Dashboard", href: "/admin", icon: "dashboard" },
+  { title: "Employees", href: "/admin/employees", icon: "users" },
   { title: "Allot Parts", href: "/admin/allot-parts", icon: "plus" },
+  { title: "Returns", href: "/admin/returns", icon: "return" },
 ]
 
 const employeeNav: NavItem[] = [
   { title: "My Dashboard", href: "/employee", icon: "dashboard" },
-  { title: "My Parts", href: "/employee/parts", icon: "package" },
-  { title: "Return Parts", href: "/employee/return", icon: "return" },
+  { title: "My Returns", href: "/employee/return", icon: "return" },
 ]
 
 interface SidebarProps {
@@ -32,12 +33,16 @@ interface SidebarProps {
 
 export function Sidebar({ isOpen = true, onClose }: SidebarProps) {
   const pathname = usePathname()
+  const router = useRouter()
   const { currentUser, setCurrentUser } = useApp()
 
   const navItems = currentUser?.role === "admin" ? adminNav : employeeNav
 
   const handleLogout = () => {
     setCurrentUser(null)
+    // Redirect to login page based on role
+    const loginPath = currentUser?.role === "admin" ? "/admin/login" : "/employee/login"
+    router.push(loginPath)
   }
 
   const handleNavClick = () => {

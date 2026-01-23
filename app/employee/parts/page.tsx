@@ -52,8 +52,11 @@ export default function EmployeePartsPage() {
     recdDate: "",
   })
 
-  // Get parts assigned to the current employee
-  const myParts = parts.filter((p) => p.assignedTo === currentUser?.id)
+  // Get parts assigned to the current employee by matching consumptionEngineer with employee name
+  const myParts = parts.filter((p) => 
+    p.assignedTo === currentUser?.id || 
+    p.consumptionEngineer === currentUser?.name
+  )
 
   const filteredParts = myParts.filter((p) => {
     if (filter === "all") return true

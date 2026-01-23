@@ -60,7 +60,7 @@ const initialFormData: AllotFormData = {
 }
 
 export default function AllotPartsPage() {
-  const { employees, assignPart, parts } = useApp()
+  const { employees, createAndAssignPart } = useApp()
   const [isOpen, setIsOpen] = useState(false)
   const [formData, setFormData] = useState<AllotFormData>(initialFormData)
   const [selectedEmployee, setSelectedEmployee] = useState("")
@@ -71,30 +71,89 @@ export default function AllotPartsPage() {
   }
 
   const handleAllot = async () => {
-    if (!formData.partNo || !selectedEmployee) return
+    if (!formData.partNo) {
+      alert("Please fill in required field: Part No.")
+      return
+    }
+
+    if (!formData.callId) {
+      alert("Please fill in required field: Call ID.")
+      return
+    }
+
+    // Validate callId format (alphanumeric only)
+    if (!/^[a-zA-Z0-9_-]+$/.test(formData.callId)) {
+      alert("Call ID must contain only letters, numbers, hyphens, and underscores.")
+      return
+    }
+
+    // Validate no script tags or dangerous HTML
+    const dangerousPattern = /<script|javascript:|onerror=|onclick=/i
+    const fieldsToValidate = [formData.callId, formData.partNo, formData.partDescription, formData.customerName]
+    
+    if (fieldsToValidate.some(field => field && dangerousPattern.test(field))) {
+      alert("Invalid input detected. Please remove any script tags or JavaScript code.")
+      return
+    }
 
     setIsSubmitting(true)
-    await new Promise((resolve) => setTimeout(resolve, 500))
+    try {
+      // Create part data object with all form fields
+      const partData = {
+        callStatus: formData.callStatus,
+        customerName: formData.customerName,
+        machineModelNo: formData.machineModelNo,
+        serialNo: formData.serialNo,
+        callId: formData.callId,
+        attendDate: formData.attendDate,
+        claimEngineerName: formData.claimEngineerName,
+        claimDate: formData.claimDate,
+        repairReplacementDOA: formData.repairReplacementDOA,
+        partDescription: formData.partDescription,
+        partNo: formData.partNo,
+        consumptionEngineer: formData.consumptionEngineer,
+        consumptionStatus: "",
+        consumptionDate: "",
+        faultyGPRPartSent: "",
+        sentDate: "",
+        receivedBy: "",
+        recdDate: "",
+        completedStatus: formData.completedStatus,
+        completedBy: formData.completedBy,
+        completeDate: formData.completeDate,
+        completedLocation: formData.completedLocation,
+        remarks: formData.remarks,
+        status: (selectedEmployee ? "assigned" : "available") as const,
+        assignedTo: selectedEmployee || "",
+        assignedDate: selectedEmployee ? new Date().toISOString() : "",
+        returnStatus: "pending" as const,
+        pendingReturnApproval: "none" as const,
+        category: "",
+        name: formData.partDescription || formData.partNo,
+        description: formData.partDescription,
+        partNumber: formData.partNo,
+      }
 
-    // Create a new part with a unique ID
-    const newPartId = `p${Date.now()}`
-    
-    // In a real app, you would create a new part in the database
-    // For now, we'll just assign an existing part or show a success message
-    
-    // Find if there's an available part with the same part number
-    const existingPart = parts.find(p => p.partNo === formData.partNo && p.status === "available")
-    
-    if (existingPart) {
-      // Assign the existing available part
-      assignPart(existingPart.id, selectedEmployee, formData.remarks)
+      // Create part in Firebase and optionally assign to employee
+      if (selectedEmployee) {
+        await createAndAssignPart(partData, selectedEmployee, formData.remarks)
+      } else {
+        // Just create the part without assignment
+        const { addPartToFirestore } = await import("@/lib/firestore")
+        await addPartToFirestore(partData)
+      }
+
+      setFormData(initialFormData)
+      setSelectedEmployee("")
+      setIsOpen(false)
+      alert(selectedEmployee ? "Part created and allotted successfully!" : "Part created successfully!")
+    } catch (error) {
+      console.error("Failed to allot part:", error)
+      const errorMessage = error instanceof Error ? error.message : "Failed to create part. Please try again."
+      alert(errorMessage)
+    } finally {
+      setIsSubmitting(false)
     }
-    // If no existing part, in a real app you would create a new part here
-
-    setFormData(initialFormData)
-    setSelectedEmployee("")
-    setIsSubmitting(false)
-    setIsOpen(false)
   }
 
   const handleOpenChange = (open: boolean) => {
@@ -131,26 +190,32 @@ export default function AllotPartsPage() {
           <DialogHeader>
             <DialogTitle className="text-lg sm:text-xl">Allot Part to Employee</DialogTitle>
             <DialogDescription className="text-sm">
-              Fill in the part details and assign to an employee.
+              Fill in the part details and optionally assign to an employee.
             </DialogDescription>
           </DialogHeader>
 
           <div className="grid gap-4 sm:gap-6 py-4">
-            {/* Employee Selection */}
+            {/* Employee Selection - Optional */}
             <div className="grid gap-2">
               <Label htmlFor="employee" className="font-medium text-sm sm:text-base">
-                Assign To Employee <span className="text-destructive">*</span>
+                Assign To Employee (Optional)
               </Label>
-              <Select value={selectedEmployee} onValueChange={setSelectedEmployee}>
+              <Select value={selectedEmployee || ""} onValueChange={setSelectedEmployee}>
                 <SelectTrigger id="employee">
-                  <SelectValue placeholder="Select an employee" />
+                  <SelectValue placeholder="Select an employee (or leave blank)" />
                 </SelectTrigger>
                 <SelectContent>
-                  {employees.map((employee) => (
-                    <SelectItem key={employee.id} value={employee.id}>
-                      {employee.name} ({employee.department})
-                    </SelectItem>
-                  ))}
+                  {employees.length > 0 ? (
+                    employees.map((employee) => (
+                      <SelectItem key={employee.id} value={employee.id}>
+                        {employee.username}
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <div className="p-2 text-sm text-muted-foreground text-center">
+                      No employees found. Create employees first.
+                    </div>
+                  )}
                 </SelectContent>
               </Select>
             </div>
@@ -165,7 +230,7 @@ export default function AllotPartsPage() {
                   <Label htmlFor="callStatus" className="text-sm">
                     Call Status
                   </Label>
-                  <Select value={formData.callStatus} onValueChange={(value) => handleInputChange("callStatus", value)}>
+                  <Select value={formData.callStatus || ""} onValueChange={(value) => handleInputChange("callStatus", value)}>
                     <SelectTrigger id="callStatus">
                       <SelectValue placeholder="Select status" />
                     </SelectTrigger>
@@ -276,7 +341,7 @@ export default function AllotPartsPage() {
                     Repair / Replacement / DOA
                   </Label>
                   <Select
-                    value={formData.repairReplacementDOA}
+                    value={formData.repairReplacementDOA || ""}
                     onValueChange={(value) => handleInputChange("repairReplacementDOA", value)}
                   >
                     <SelectTrigger id="repairReplacementDOA">
@@ -315,7 +380,7 @@ export default function AllotPartsPage() {
                   </Label>
                   <Input
                     id="partDescription"
-                    placeholder="e.g., Hydraulic Valve Assembly"
+                    placeholder="e.g., Print heads"
                     value={formData.partDescription}
                     onChange={(e) => handleInputChange("partDescription", e.target.value)}
                   />
@@ -345,7 +410,7 @@ export default function AllotPartsPage() {
                     Completed Status
                   </Label>
                   <Select
-                    value={formData.completedStatus}
+                    value={formData.completedStatus || ""}
                     onValueChange={(value) => handleInputChange("completedStatus", value)}
                   >
                     <SelectTrigger id="completedStatus">
@@ -420,18 +485,18 @@ export default function AllotPartsPage() {
             </Button>
             <Button
               onClick={handleAllot}
-              disabled={!formData.partNo || !selectedEmployee || isSubmitting}
+              disabled={!formData.partNo || isSubmitting}
               className="w-full sm:w-auto"
             >
               {isSubmitting ? (
                 <>
                   <Icons.loader className="mr-2 h-4 w-4 animate-spin" />
-                  Allotting...
+                  {selectedEmployee ? "Allotting..." : "Creating..."}
                 </>
               ) : (
                 <>
                   <Icons.check className="mr-2 h-4 w-4" />
-                  Allot Part
+                  {selectedEmployee ? "Allot Part" : "Create Part"}
                 </>
               )}
             </Button>

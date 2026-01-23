@@ -16,10 +16,14 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   const { currentUser } = useApp()
   const router = useRouter()
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+  const [isChecking, setIsChecking] = useState(true)
 
   useEffect(() => {
+    // Check authentication status
     if (!currentUser) {
       router.push("/")
+    } else {
+      setIsChecking(false)
     }
   }, [currentUser, router])
 
@@ -27,8 +31,16 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
     setIsSidebarOpen(false)
   }, [])
 
-  if (!currentUser) {
-    return null
+  // Show loading state while checking auth
+  if (isChecking || !currentUser) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+          <p className="text-sm text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    )
   }
 
   return (

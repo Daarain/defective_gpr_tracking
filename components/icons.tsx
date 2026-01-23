@@ -29,6 +29,11 @@ import {
   Menu,
   Pencil,
   Undo2,
+  Eye,
+  EyeOff,
+  Trash2,
+  Table,
+  LayoutGrid,
 } from "lucide-react"
 
 export const Icons = {
@@ -63,6 +68,11 @@ export const Icons = {
   menu: Menu,
   edit: Pencil,
   returnPart: Undo2,
+  eye: Eye,
+  eyeOff: EyeOff,
+  trash: Trash2,
+  table: Table,
+  layout: LayoutGrid,
 }
 
 export type IconName = keyof typeof Icons

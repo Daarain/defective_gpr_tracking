@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { useApp } from "@/context/app-context"
@@ -11,48 +11,127 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Icons } from "@/components/icons"
 import { ThemeToggle } from "@/components/ui/theme-toggle"
+import { authenticateEmployee } from "@/lib/firestore"
 
-const employeeCredentials = [
-  { email: "j.mitchell@company.com", password: "emp123", id: "e1", name: "John Mitchell", department: "Assembly" },
-  { email: "s.chen@company.com", password: "emp123", id: "e2", name: "Sarah Chen", department: "Maintenance" },
-  {
-    email: "m.torres@company.com",
-    password: "emp123",
-    id: "e3",
-    name: "Michael Torres",
-    department: "Quality Control",
-  },
-  { email: "e.johnson@company.com", password: "emp123", id: "e4", name: "Emily Johnson", department: "Assembly" },
-]
+const MAX_LOGIN_ATTEMPTS = 5
+const LOCKOUT_DURATION = 15 * 60 * 1000 // 15 minutes
 
 export default function EmployeeLoginPage() {
   const { setCurrentUser } = useApp()
   const router = useRouter()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState("")
   const [isLoading, setIsLoading] = useState(false)
-  const [loggedInUser, setLoggedInUser] = useState<(typeof employeeCredentials)[0] | null>(null)
+  const [loggedInUser, setLoggedInUser] = useState<{ id: string; username: string } | null>(null)
+  const [loginAttempts, setLoginAttempts] = useState(0)
+  const [isLockedOut, setIsLockedOut] = useState(false)
+  const [lockoutEndTime, setLockoutEndTime] = useState<number | null>(null)
+  const [remainingTime, setRemainingTime] = useState(0)
+
+  // Check for existing lockout on component mount
+  useEffect(() => {
+    const storedLockout = localStorage.getItem('employeeLoginLockout')
+    if (storedLockout) {
+      const lockoutEnd = parseInt(storedLockout, 10)
+      if (lockoutEnd > Date.now()) {
+        setIsLockedOut(true)
+        setLockoutEndTime(lockoutEnd)
+      } else {
+        localStorage.removeItem('employeeLoginLockout')
+        localStorage.removeItem('employeeLoginAttempts')
+      }
+    }
+
+    const storedAttempts = localStorage.getItem('employeeLoginAttempts')
+    if (storedAttempts) {
+      setLoginAttempts(parseInt(storedAttempts, 10))
+    }
+  }, [])
+
+  // Update remaining time countdown
+  useEffect(() => {
+    if (isLockedOut && lockoutEndTime) {
+      const interval = setInterval(() => {
+        const remaining = Math.max(0, lockoutEndTime - Date.now())
+        setRemainingTime(remaining)
+        
+        if (remaining === 0) {
+          setIsLockedOut(false)
+          setLockoutEndTime(null)
+          setLoginAttempts(0)
+          localStorage.removeItem('employeeLoginLockout')
+          localStorage.removeItem('employeeLoginAttempts')
+        }
+      }, 1000)
+
+      return () => clearInterval(interval)
+    }
+  }, [isLockedOut, lockoutEndTime])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setError("")
+    
+    // Check if locked out
+    if (isLockedOut) {
+      const minutes = Math.ceil(remainingTime / 60000)
+      setError(`Too many failed attempts. Please try again in ${minutes} minute${minutes !== 1 ? 's' : ''}.`)
+      return
+    }
+    
+    // Trim inputs
+    const trimmedEmail = email.trim()
+    const trimmedPassword = password.trim()
+    
+    // Basic validation
+    if (!trimmedEmail || !trimmedPassword) {
+      setError("Please enter both username and password.")
+      return
+    }
+    
+    if (trimmedEmail.length < 3) {
+      setError("Username must be at least 3 characters.")
+      return
+    }
+    
     setIsLoading(true)
 
-    await new Promise((resolve) => setTimeout(resolve, 800))
+    try {
+      const user = await authenticateEmployee(trimmedEmail, trimmedPassword)
 
-    const user = employeeCredentials.find(
-      (u) => u.email.toLowerCase() === email.toLowerCase() && u.password === password,
-    )
+      if (user) {
+        // Reset attempts on successful login
+        localStorage.removeItem('employeeLoginAttempts')
+        localStorage.removeItem('employeeLoginLockout')
+        setLoginAttempts(0)
+        
+        setLoggedInUser(user)
+        setCurrentUser({ role: "employee", id: user.id, name: user.username })
 
-    if (user) {
-      setLoggedInUser(user)
-      setCurrentUser({ role: "employee", id: user.id, name: user.name })
-
-      await new Promise((resolve) => setTimeout(resolve, 1200))
-      router.push("/employee")
-    } else {
-      setError("Invalid employee credentials")
+        await new Promise((resolve) => setTimeout(resolve, 1200))
+        router.push("/employee")
+      } else {
+        // Increment failed attempts
+        const newAttempts = loginAttempts + 1
+        setLoginAttempts(newAttempts)
+        localStorage.setItem('employeeLoginAttempts', newAttempts.toString())
+        
+        if (newAttempts >= MAX_LOGIN_ATTEMPTS) {
+          const lockoutEnd = Date.now() + LOCKOUT_DURATION
+          setIsLockedOut(true)
+          setLockoutEndTime(lockoutEnd)
+          localStorage.setItem('employeeLoginLockout', lockoutEnd.toString())
+          setError(`Too many failed attempts. Account locked for 15 minutes.`)
+        } else {
+          const remainingAttempts = MAX_LOGIN_ATTEMPTS - newAttempts
+          setError(`Invalid credentials. ${remainingAttempts} attempt${remainingAttempts !== 1 ? 's' : ''} remaining.`)
+        }
+        setIsLoading(false)
+      }
+    } catch (error) {
+      setError("Connection error. Please check your internet connection.")
       setIsLoading(false)
     }
   }
@@ -88,8 +167,7 @@ export default function EmployeeLoginPage() {
                   <Icons.check className="h-7 w-7 sm:h-8 sm:w-8 text-success" />
                 </div>
                 <div className="text-center">
-                  <p className="text-base sm:text-lg font-medium text-foreground">Welcome, {loggedInUser.name}!</p>
-                  <p className="mt-1 text-xs sm:text-sm text-muted-foreground">{loggedInUser.department} Department</p>
+                  <p className="text-base sm:text-lg font-medium text-foreground">Welcome, {loggedInUser.username}!</p>
                   <div className="mt-2 sm:mt-3 flex justify-center">
                     <span className="inline-flex items-center gap-2 rounded-full bg-success/10 px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-success">
                       <Icons.wrench className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
@@ -103,16 +181,16 @@ export default function EmployeeLoginPage() {
               <form onSubmit={handleLogin} className="space-y-3 sm:space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="email" className="text-sm">
-                    Email
+                    Username
                   </Label>
                   <Input
                     id="email"
-                    type="email"
-                    placeholder="name@company.com"
+                    type="text"
+                    placeholder="username"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
-                    autoComplete="email"
+                    autoComplete="username"
                     aria-describedby={error ? "login-error" : undefined}
                   />
                 </div>
@@ -120,15 +198,30 @@ export default function EmployeeLoginPage() {
                   <Label htmlFor="password" className="text-sm">
                     Password
                   </Label>
-                  <Input
-                    id="password"
-                    type="password"
-                    placeholder="Enter your password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    autoComplete="current-password"
-                  />
+                  <div className="relative">
+                    <Input
+                      id="password"
+                      type={showPassword ? "text" : "password"}
+                      placeholder="Enter your password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                      autoComplete="current-password"
+                      className="pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                      aria-label={showPassword ? "Hide password" : "Show password"}
+                    >
+                      {showPassword ? (
+                        <Icons.eye className="h-4 w-4" />
+                      ) : (
+                        <Icons.eyeOff className="h-4 w-4" />
+                      )}
+                    </button>
+                  </div>
                 </div>
 
                 {error && (
@@ -167,22 +260,11 @@ export default function EmployeeLoginPage() {
               <>
                 <div className="mt-4 sm:mt-6 rounded-lg border border-border bg-muted/50 p-3 sm:p-4">
                   <p className="mb-2 text-[10px] sm:text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                    Demo Credentials
+                    Employee Login
                   </p>
-                  <div className="space-y-1.5 sm:space-y-2 text-xs sm:text-sm">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-muted-foreground">Email:</span>
-                      <code className="rounded bg-muted px-1.5 sm:px-2 py-0.5 text-[10px] sm:text-xs text-foreground truncate">
-                        j.mitchell@company.com
-                      </code>
-                    </div>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-muted-foreground">Password:</span>
-                      <code className="rounded bg-muted px-1.5 sm:px-2 py-0.5 text-[10px] sm:text-xs text-foreground">
-                        emp123
-                      </code>
-                    </div>
-                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Use the credentials provided by your administrator to log in.
+                  </p>
                 </div>
 
                 <div className="mt-3 sm:mt-4 text-center">

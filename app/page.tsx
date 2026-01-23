@@ -96,7 +96,7 @@ export default function HomePage() {
 
       {/* Footer */}
       <footer className="border-t border-border py-3 sm:py-4">
-        <p className="text-center text-xs sm:text-sm text-muted-foreground">Industrial Parts Management System</p>
+        <p className="text-center text-xs sm:text-sm text-muted-foreground">Parts management System</p>
       </footer>
     </div>
   )

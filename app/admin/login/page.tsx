@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { useApp } from "@/context/app-context"
@@ -11,38 +11,127 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Icons } from "@/components/icons"
 import { ThemeToggle } from "@/components/ui/theme-toggle"
+import { authenticateAdmin } from "@/lib/firestore"
 
-const adminCredentials = [
-  { email: "admin@company.com", password: "admin123", id: "admin-1", name: "Admin User" },
-  { email: "manager@company.com", password: "manager123", id: "admin-2", name: "Manager User" },
-]
+const MAX_LOGIN_ATTEMPTS = 5
+const LOCKOUT_DURATION = 15 * 60 * 1000 // 15 minutes
 
 export default function AdminLoginPage() {
   const { setCurrentUser } = useApp()
   const router = useRouter()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState("")
   const [isLoading, setIsLoading] = useState(false)
-  const [loggedInUser, setLoggedInUser] = useState<(typeof adminCredentials)[0] | null>(null)
+  const [loggedInUser, setLoggedInUser] = useState<{ id: string; name: string; username: string } | null>(null)
+  const [loginAttempts, setLoginAttempts] = useState(0)
+  const [isLockedOut, setIsLockedOut] = useState(false)
+  const [lockoutEndTime, setLockoutEndTime] = useState<number | null>(null)
+  const [remainingTime, setRemainingTime] = useState(0)
+
+  // Check for existing lockout on component mount
+  useEffect(() => {
+    const storedLockout = localStorage.getItem('adminLoginLockout')
+    if (storedLockout) {
+      const lockoutEnd = parseInt(storedLockout, 10)
+      if (lockoutEnd > Date.now()) {
+        setIsLockedOut(true)
+        setLockoutEndTime(lockoutEnd)
+      } else {
+        localStorage.removeItem('adminLoginLockout')
+        localStorage.removeItem('adminLoginAttempts')
+      }
+    }
+
+    const storedAttempts = localStorage.getItem('adminLoginAttempts')
+    if (storedAttempts) {
+      setLoginAttempts(parseInt(storedAttempts, 10))
+    }
+  }, [])
+
+  // Update remaining time countdown
+  useEffect(() => {
+    if (isLockedOut && lockoutEndTime) {
+      const interval = setInterval(() => {
+        const remaining = Math.max(0, lockoutEndTime - Date.now())
+        setRemainingTime(remaining)
+        
+        if (remaining === 0) {
+          setIsLockedOut(false)
+          setLockoutEndTime(null)
+          setLoginAttempts(0)
+          localStorage.removeItem('adminLoginLockout')
+          localStorage.removeItem('adminLoginAttempts')
+        }
+      }, 1000)
+
+      return () => clearInterval(interval)
+    }
+  }, [isLockedOut, lockoutEndTime])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setError("")
+    
+    // Check if locked out
+    if (isLockedOut) {
+      const minutes = Math.ceil(remainingTime / 60000)
+      setError(`Too many failed attempts. Please try again in ${minutes} minute${minutes !== 1 ? 's' : ''}.`)
+      return
+    }
+    
+    // Trim inputs
+    const trimmedEmail = email.trim()
+    const trimmedPassword = password.trim()
+    
+    // Basic validation
+    if (!trimmedEmail || !trimmedPassword) {
+      setError("Please enter both username and password.")
+      return
+    }
+    
+    if (trimmedEmail.length < 3) {
+      setError("Username must be at least 3 characters.")
+      return
+    }
+    
     setIsLoading(true)
 
-    await new Promise((resolve) => setTimeout(resolve, 800))
+    try {
+      const user = await authenticateAdmin(trimmedEmail, trimmedPassword)
 
-    const user = adminCredentials.find((u) => u.email.toLowerCase() === email.toLowerCase() && u.password === password)
+      if (user) {
+        // Reset attempts on successful login
+        localStorage.removeItem('adminLoginAttempts')
+        localStorage.removeItem('adminLoginLockout')
+        setLoginAttempts(0)
+        
+        setLoggedInUser(user)
+        setCurrentUser({ role: "admin", id: user.id, name: user.name })
 
-    if (user) {
-      setLoggedInUser(user)
-      setCurrentUser({ role: "admin", id: user.id, name: user.name })
-
-      await new Promise((resolve) => setTimeout(resolve, 1200))
-      router.push("/admin")
-    } else {
-      setError("Invalid admin credentials")
+        await new Promise((resolve) => setTimeout(resolve, 1200))
+        router.push("/admin")
+      } else {
+        // Increment failed attempts
+        const newAttempts = loginAttempts + 1
+        setLoginAttempts(newAttempts)
+        localStorage.setItem('adminLoginAttempts', newAttempts.toString())
+        
+        if (newAttempts >= MAX_LOGIN_ATTEMPTS) {
+          const lockoutEnd = Date.now() + LOCKOUT_DURATION
+          setIsLockedOut(true)
+          setLockoutEndTime(lockoutEnd)
+          localStorage.setItem('adminLoginLockout', lockoutEnd.toString())
+          setError(`Too many failed attempts. Account locked for 15 minutes.`)
+        } else {
+          const remainingAttempts = MAX_LOGIN_ATTEMPTS - newAttempts
+          setError(`Invalid credentials. ${remainingAttempts} attempt${remainingAttempts !== 1 ? 's' : ''} remaining.`)
+        }
+        setIsLoading(false)
+      }
+    } catch (error) {
+      setError("Connection error. Please check your internet connection.")
       setIsLoading(false)
     }
   }
@@ -92,16 +181,16 @@ export default function AdminLoginPage() {
               <form onSubmit={handleLogin} className="space-y-3 sm:space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="email" className="text-sm">
-                    Email
+                    Username
                   </Label>
                   <Input
                     id="email"
-                    type="email"
-                    placeholder="admin@company.com"
+                    type="text"
+                    placeholder="admin"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
-                    autoComplete="email"
+                    autoComplete="username"
                     aria-describedby={error ? "login-error" : undefined}
                   />
                 </div>
@@ -109,15 +198,30 @@ export default function AdminLoginPage() {
                   <Label htmlFor="password" className="text-sm">
                     Password
                   </Label>
-                  <Input
-                    id="password"
-                    type="password"
-                    placeholder="Enter your password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    autoComplete="current-password"
-                  />
+                  <div className="relative">
+                    <Input
+                      id="password"
+                      type={showPassword ? "text" : "password"}
+                      placeholder="Enter your password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                      autoComplete="current-password"
+                      className="pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                      aria-label={showPassword ? "Hide password" : "Show password"}
+                    >
+                      {showPassword ? (
+                        <Icons.eye className="h-4 w-4" />
+                      ) : (
+                        <Icons.eyeOff className="h-4 w-4" />
+                      )}
+                    </button>
+                  </div>
                 </div>
 
                 {error && (
@@ -155,9 +259,9 @@ export default function AdminLoginPage() {
                   </p>
                   <div className="space-y-1.5 sm:space-y-2 text-xs sm:text-sm">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-muted-foreground">Email:</span>
+                      <span className="text-muted-foreground">Username:</span>
                       <code className="rounded bg-muted px-1.5 sm:px-2 py-0.5 text-[10px] sm:text-xs text-foreground truncate">
-                        admin@company.com
+                        admin
                       </code>
                     </div>
                     <div className="flex items-center justify-between gap-2">

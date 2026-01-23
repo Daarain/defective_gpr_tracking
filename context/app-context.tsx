@@ -1,7 +1,44 @@
 "use client"
 
 import type React from "react"
-import { createContext, useContext, useState, useCallback } from "react"
+import { createContext, useContext, useState, useCallback, useEffect } from "react"
+import {
+  getEmployeesFromFirestore,
+  getPartsFromFirestore,
+  getAssignmentsFromFirestore,
+  addEmployeeToFirestore,
+  addPartToFirestore,
+  addAssignmentToFirestore,
+  updatePartInFirestore,
+  updateAssignmentInFirestore,
+  deleteEmployeeFromFirestore,
+  updateEmployeePasswordInFirestore,
+} from "@/lib/firestore"
+
+// Cookie utility functions
+const setCookie = (name: string, value: string, days: number = 7) => {
+  const expires = new Date()
+  expires.setTime(expires.getTime() + days * 24 * 60 * 60 * 1000)
+  // Add SameSite and Secure attributes for security
+  const secure = window.location.protocol === 'https:' ? ';Secure' : ''
+  document.cookie = `${name}=${value};expires=${expires.toUTCString()};path=/;SameSite=Strict${secure}`
+}
+
+const getCookie = (name: string): string | null => {
+  const nameEQ = name + "="
+  const ca = document.cookie.split(";")
+  for (let i = 0; i < ca.length; i++) {
+    let c = ca[i]
+    while (c.charAt(0) === " ") c = c.substring(1, c.length)
+    if (c.indexOf(nameEQ) === 0) return c.substring(nameEQ.length, c.length)
+  }
+  return null
+}
+
+const deleteCookie = (name: string) => {
+  const secure = window.location.protocol === 'https:' ? ';Secure' : ''
+  document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 UTC;path=/;SameSite=Strict${secure}`
+}
 
 export type UserRole = "admin" | "employee" | null
 
@@ -36,18 +73,20 @@ export interface Part {
   assignedTo?: string
   returnedDate?: string
   returnCondition?: "gpr" | "defective"
+  returnStatus?: "pending" | "yes" | "no"
   assignedDate?: string
   category: string
   name: string
   description: string
   partNumber: string
+  pendingReturnApproval?: "none" | "pending" | "approved" | "rejected"
 }
 
 export interface Employee {
   id: string
-  name: string
-  email: string
-  department: string
+  employeeId: number
+  username: string
+  password: string
   assignedParts: string[]
 }
 
@@ -56,7 +95,7 @@ export interface Assignment {
   partId: string
   employeeId: string
   assignedDate: string
-  status: "active" | "completed"
+  status: "active" | "pending-return" | "completed"
   returnDate?: string
   returnCondition?: "gpr" | "defective"
   notes?: string
@@ -71,192 +110,88 @@ interface AppContextType {
   assignPart: (partId: string, employeeId: string, notes?: string) => void
   returnPart: (assignmentId: string, condition: "gpr" | "defective", notes?: string) => void
   updatePart: (partId: string, updates: Partial<Part>) => void
+  updatePartAssignment: (partId: string, newEmployeeId: string) => Promise<void>
+  acceptReturn: (assignmentId: string) => Promise<void>
+  rejectReturn: (assignmentId: string) => Promise<void>
+  createAndAssignPart: (partData: Omit<Part, "id">, employeeId: string, notes?: string) => Promise<void>
+  addEmployee: (username: string, password: string) => Promise<void>
+  deleteEmployee: (employeeId: string) => Promise<void>
+  updateEmployeePassword: (employeeId: string, newPassword: string) => Promise<void>
   getEmployeeParts: (employeeId: string) => Assignment[]
   getPartById: (partId: string) => Part | undefined
   getEmployeeById: (employeeId: string) => Employee | undefined
+  updateAssignment: (assignmentId: string, updates: Partial<Assignment>) => Promise<void>
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined)
 
-// Initial mock data
-const initialParts: Part[] = [
-  {
-    id: "p1",
-    callStatus: "Open",
-    customerName: "ABC Manufacturing",
-    machineModelNo: "MDL-5000X",
-    serialNo: "SN-2024-001",
-    callId: "CALL-001",
-    attendDate: "2024-01-15",
-    claimEngineerName: "John Mitchell",
-    claimDate: "2024-01-16",
-    repairReplacementDOA: "Replacement",
-    partDescription: "Hydraulic Valve Assembly",
-    partNo: "HV-001",
-    consumptionEngineer: "Sarah Chen",
-    consumptionStatus: "Pending",
-    consumptionDate: "",
-    faultyGPRPartSent: "No",
-    sentDate: "",
-    receivedBy: "",
-    recdDate: "",
-    completedStatus: "In Progress",
-    completedBy: "",
-    completeDate: "",
-    completedLocation: "",
-    remarks: "Urgent replacement needed",
-    status: "assigned",
-    assignedTo: "e1",
-    assignedDate: "2024-01-16",
-    category: "Hydraulic",
-    name: "Hydraulic Valve Assembly",
-    description: "High-pressure hydraulic valve assembly for industrial machinery",
-    partNumber: "HV-001",
-  },
-  {
-    id: "p2",
-    callStatus: "Closed",
-    customerName: "XYZ Industries",
-    machineModelNo: "MDL-3000Y",
-    serialNo: "SN-2024-002",
-    callId: "CALL-002",
-    attendDate: "2024-01-10",
-    claimEngineerName: "Michael Torres",
-    claimDate: "2024-01-11",
-    repairReplacementDOA: "Repair",
-    partDescription: "Servo Motor 5kW",
-    partNo: "SM-002",
-    consumptionEngineer: "Emily Johnson",
-    consumptionStatus: "Consumed",
-    consumptionDate: "2024-01-12",
-    faultyGPRPartSent: "Yes",
-    sentDate: "2024-01-13",
-    receivedBy: "Warehouse A",
-    recdDate: "2024-01-14",
-    completedStatus: "Completed",
-    completedBy: "Michael Torres",
-    completeDate: "2024-01-14",
-    completedLocation: "Site B",
-    remarks: "GPR returned successfully",
-    status: "returned-gpr",
-    returnedDate: "2024-01-14",
-    returnCondition: "gpr",
-    category: "Motors",
-    name: "Servo Motor 5kW",
-    description: "High-precision servo motor for automated systems",
-    partNumber: "SM-002",
-  },
-  {
-    id: "p3",
-    callStatus: "Open",
-    customerName: "DEF Corp",
-    machineModelNo: "MDL-7000Z",
-    serialNo: "SN-2024-003",
-    callId: "CALL-003",
-    attendDate: "2024-01-18",
-    claimEngineerName: "Sarah Chen",
-    claimDate: "2024-01-19",
-    repairReplacementDOA: "DOA",
-    partDescription: "Control Module PLC",
-    partNo: "CM-003",
-    consumptionEngineer: "",
-    consumptionStatus: "Pending",
-    consumptionDate: "",
-    faultyGPRPartSent: "No",
-    sentDate: "",
-    receivedBy: "",
-    recdDate: "",
-    completedStatus: "Pending",
-    completedBy: "",
-    completeDate: "",
-    completedLocation: "",
-    remarks: "Dead on arrival - needs investigation",
-    status: "available",
-    category: "Electronics",
-    name: "Control Module PLC",
-    description: "Programmable logic controller for industrial automation",
-    partNumber: "CM-003",
-  },
-  {
-    id: "p4",
-    callStatus: "In Progress",
-    customerName: "GHI Electronics",
-    machineModelNo: "MDL-2000W",
-    serialNo: "SN-2024-004",
-    callId: "CALL-004",
-    attendDate: "2024-01-20",
-    claimEngineerName: "Emily Johnson",
-    claimDate: "2024-01-21",
-    repairReplacementDOA: "Replacement",
-    partDescription: "Pressure Sensor 500PSI",
-    partNo: "PS-004",
-    consumptionEngineer: "John Mitchell",
-    consumptionStatus: "In Use",
-    consumptionDate: "2024-01-22",
-    faultyGPRPartSent: "No",
-    sentDate: "",
-    receivedBy: "",
-    recdDate: "",
-    completedStatus: "In Progress",
-    completedBy: "",
-    completeDate: "",
-    completedLocation: "",
-    remarks: "Installation in progress",
-    status: "in-use",
-    assignedTo: "e2",
-    assignedDate: "2024-01-22",
-    category: "Sensors",
-    name: "Pressure Sensor 500PSI",
-    description: "High-accuracy pressure sensor for hydraulic systems",
-    partNumber: "PS-004",
-  },
-  {
-    id: "p5",
-    callStatus: "Closed",
-    customerName: "JKL Systems",
-    machineModelNo: "MDL-4000V",
-    serialNo: "SN-2024-005",
-    callId: "CALL-005",
-    attendDate: "2024-01-05",
-    claimEngineerName: "Michael Torres",
-    claimDate: "2024-01-06",
-    repairReplacementDOA: "Repair",
-    partDescription: "Bearing Assembly HD",
-    partNo: "BA-005",
-    consumptionEngineer: "Sarah Chen",
-    consumptionStatus: "Consumed",
-    consumptionDate: "2024-01-07",
-    faultyGPRPartSent: "Yes",
-    sentDate: "2024-01-08",
-    receivedBy: "Warehouse B",
-    recdDate: "2024-01-09",
-    completedStatus: "Completed",
-    completedBy: "Sarah Chen",
-    completeDate: "2024-01-09",
-    completedLocation: "Site A",
-    remarks: "Defective part returned",
-    status: "returned-defective",
-    returnedDate: "2024-01-09",
-    returnCondition: "defective",
-    category: "Mechanical",
-    name: "Bearing Assembly HD",
-    description: "Heavy-duty bearing assembly for industrial equipment",
-    partNumber: "BA-005",
-  },
-]
-
-const initialEmployees: Employee[] = [
-  { id: "e1", name: "John Mitchell", email: "j.mitchell@company.com", department: "Assembly", assignedParts: [] },
-  { id: "e2", name: "Sarah Chen", email: "s.chen@company.com", department: "Maintenance", assignedParts: [] },
-  { id: "e3", name: "Michael Torres", email: "m.torres@company.com", department: "Quality Control", assignedParts: [] },
-  { id: "e4", name: "Emily Johnson", email: "e.johnson@company.com", department: "Assembly", assignedParts: [] },
-]
+// Empty initial data - will be loaded from Firestore
+const initialParts: Part[] = []
+const initialEmployees: Employee[] = []
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
-  const [currentUser, setCurrentUser] = useState<{ role: UserRole; id: string; name: string } | null>(null)
+  // Initialize currentUser from cookies
+  const [currentUser, setCurrentUserState] = useState<{ role: UserRole; id: string; name: string } | null>(() => {
+    // Only access cookies on client side
+    if (typeof window !== "undefined") {
+      const savedUser = getCookie("currentUser")
+      if (savedUser) {
+        try {
+          return JSON.parse(decodeURIComponent(savedUser))
+        } catch (error) {
+          console.error("Failed to parse saved user:", error)
+          deleteCookie("currentUser")
+        }
+      }
+    }
+    return null
+  })
+  
   const [parts, setParts] = useState<Part[]>(initialParts)
   const [employees, setEmployees] = useState<Employee[]>(initialEmployees)
   const [assignments, setAssignments] = useState<Assignment[]>([])
+  const [loading, setLoading] = useState(true)
+
+  // Wrapper function to save user to cookies when setting currentUser
+  const setCurrentUser = useCallback((user: { role: UserRole; id: string; name: string } | null) => {
+    setCurrentUserState(user)
+    if (user) {
+      // Save to cookie
+      setCookie("currentUser", encodeURIComponent(JSON.stringify(user)), 7)
+    } else {
+      // Clear cookie on logout
+      deleteCookie("currentUser")
+    }
+  }, [])
+
+  // Load data from Firestore on mount
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const [firestoreEmployees, firestoreParts, firestoreAssignments] = await Promise.all([
+          getEmployeesFromFirestore(),
+          getPartsFromFirestore(),
+          getAssignmentsFromFirestore(),
+        ])
+
+        console.log("Loaded from Firestore:", {
+          employees: firestoreEmployees.length,
+          parts: firestoreParts.length,
+          assignments: firestoreAssignments.length
+        })
+
+        // Always use Firestore data
+        setEmployees(firestoreEmployees)
+        setParts(firestoreParts)
+        setAssignments(firestoreAssignments)
+      } catch (error) {
+        console.error("Error loading data from Firestore:", error)
+      } finally {
+        setLoading(false)
+      }
+    }
+    loadData()
+  }, [])
 
   const assignPart = useCallback((partId: string, employeeId: string, notes?: string) => {
     const newAssignment: Assignment = {
@@ -268,18 +203,29 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       notes,
     }
 
+    // Save to Firestore
+    addAssignmentToFirestore(partId, employeeId, notes).catch((error) => {
+      console.error("Failed to save assignment to Firestore:", error)
+    })
+
     setAssignments((prev) => [...prev, newAssignment])
     setParts((prev) =>
-      prev.map((part) =>
-        part.id === partId
-          ? {
-              ...part,
-              status: "assigned" as PartStatus,
-              assignedTo: employeeId,
-              assignedDate: newAssignment.assignedDate,
-            }
-          : part,
-      ),
+      prev.map((part) => {
+        if (part.id === partId) {
+          const updatedPart = {
+            ...part,
+            status: "assigned" as PartStatus,
+            assignedTo: employeeId,
+            assignedDate: newAssignment.assignedDate,
+          }
+          // Update in Firestore
+          updatePartInFirestore(partId, updatedPart).catch((error) => {
+            console.error("Failed to update part in Firestore:", error)
+          })
+          return updatedPart
+        }
+        return part
+      }),
     )
     setEmployees((prev) =>
       prev.map((emp) => (emp.id === employeeId ? { ...emp, assignedParts: [...emp.assignedParts, partId] } : emp)),
@@ -287,49 +233,291 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const returnPart = useCallback(
-    (assignmentId: string, condition: "gpr" | "defective", notes?: string) => {
-      setAssignments((prev) =>
-        prev.map((assignment) =>
-          assignment.id === assignmentId
-            ? {
-                ...assignment,
-                status: "completed" as const,
-                returnDate: new Date().toISOString(),
-                returnCondition: condition,
-                notes: notes || assignment.notes,
-              }
-            : assignment,
-        ),
-      )
+    async (assignmentId: string, condition: "gpr" | "defective", notes?: string) => {
+      try {
+        console.log("=== RETURN PART FUNCTION START ===")
+        console.log("Looking for assignment with ID:", assignmentId)
+        
+        // First try to find in current state
+        let assignment = assignments.find((a) => a.id === assignmentId)
+        console.log("Assignment found in state:", assignment)
+        
+        // If not found in state, it might have been added recently, so we'll try the update anyway
+        // The assignmentId should be valid as it was generated by the caller
+        if (!assignment) {
+          console.warn("Assignment not found in state, but will attempt update anyway as ID was provided:", assignmentId)
+        }
 
-      const assignment = assignments.find((a) => a.id === assignmentId)
-      if (assignment) {
-        setParts((prev) =>
-          prev.map((part) =>
-            part.id === assignment.partId
+        console.log("=== RETURN PART FUNCTION ===")
+        console.log("Assignment ID:", assignmentId)
+        console.log("Condition:", condition)
+        console.log("Notes:", notes)
+
+        const updatedAssignment = {
+          status: "pending-return" as const,
+          returnDate: new Date().toISOString(),
+          returnCondition: condition,
+          notes: notes || (assignment?.notes || ""),
+        }
+
+        // Update assignment in Firestore
+        console.log("Updating assignment in Firestore with:", updatedAssignment)
+        await updateAssignmentInFirestore(assignmentId, updatedAssignment)
+        console.log("Assignment updated successfully in Firestore")
+
+        setAssignments((prev) =>
+          prev.map((a) =>
+            a.id === assignmentId
               ? {
-                  ...part,
-                  status: (condition === "gpr" ? "returned-gpr" : "returned-defective") as PartStatus,
-                  returnedDate: new Date().toISOString(),
-                  returnCondition: condition,
+                  ...a,
+                  ...updatedAssignment,
                 }
-              : part,
+              : a,
           ),
         )
-        setEmployees((prev) =>
-          prev.map((emp) =>
-            emp.id === assignment.employeeId
-              ? { ...emp, assignedParts: emp.assignedParts.filter((id) => id !== assignment.partId) }
-              : emp,
-          ),
-        )
+        console.log("Assignment state updated locally")
+
+        // If we have the assignment info, update the part
+        if (assignment) {
+          const updatedPart = {
+            status: (condition === "gpr" ? "returned-gpr" : "returned-defective") as PartStatus,
+            returnedDate: new Date().toISOString(),
+            returnCondition: condition,
+            returnStatus: "pending" as const,
+            pendingReturnApproval: "pending" as const,
+          }
+
+          // Update part in Firestore
+          console.log("Updating part in Firestore with:", updatedPart)
+          await updatePartInFirestore(assignment.partId, updatedPart)
+          console.log("Part updated successfully in Firestore")
+
+          setParts((prev) =>
+            prev.map((part) => {
+              if (part.id === assignment.partId) {
+                return { ...part, ...updatedPart }
+              }
+              return part
+            }),
+          )
+          console.log("Part state updated locally")
+        } else {
+          console.log("Assignment not in state, skipping part update - will be synced on next refresh")
+        }
+
+        console.log("=== RETURN PART FUNCTION COMPLETED SUCCESSFULLY ===")
+      } catch (error) {
+        console.error("=== FAILED TO PROCESS RETURN REQUEST ===")
+        console.error("Error:", error)
+        if (error instanceof Error) {
+          console.error("Error message:", error.message)
+          console.error("Error stack:", error.stack)
+        }
+        throw error
       }
+      // Don't remove from employee's assigned parts yet - wait for admin approval
     },
     [assignments],
   )
 
-  const updatePart = useCallback((partId: string, updates: Partial<Part>) => {
-    setParts((prev) => prev.map((part) => (part.id === partId ? { ...part, ...updates } : part)))
+  const updatePart = useCallback(async (partId: string, updates: Partial<Part>) => {
+    try {
+      // Update in Firestore first
+      await updatePartInFirestore(partId, updates)
+      // Update local state after successful Firebase update
+      setParts((prev) => prev.map((part) => (part.id === partId ? { ...part, ...updates } : part)))
+    } catch (error) {
+      console.error("Failed to update part in Firestore:", error)
+      throw error
+    }
+  }, [])
+
+  const updatePartAssignment = useCallback(async (partId: string, newEmployeeId: string) => {
+    try {
+      const part = parts.find(p => p.id === partId)
+      if (!part) throw new Error("Part not found")
+
+      const oldEmployeeId = part.assignedTo
+
+      // Update part's assignedTo
+      const updatedPartData = {
+        assignedTo: newEmployeeId,
+      }
+      await updatePartInFirestore(partId, updatedPartData)
+      setParts((prev) => prev.map((p) => (p.id === partId ? { ...p, ...updatedPartData } : p)))
+
+      // Update assignments
+      const activeAssignment = assignments.find(a => a.partId === partId && a.status === "active")
+      if (activeAssignment) {
+        const updatedAssignment = {
+          employeeId: newEmployeeId,
+        }
+        await updateAssignmentInFirestore(activeAssignment.id, updatedAssignment)
+        setAssignments((prev) =>
+          prev.map((a) =>
+            a.id === activeAssignment.id ? { ...a, ...updatedAssignment } : a
+          )
+        )
+      }
+
+      // Update employee's assigned parts
+      if (oldEmployeeId) {
+        setEmployees((prev) =>
+          prev.map((emp) => (emp.id === oldEmployeeId ? { ...emp, assignedParts: emp.assignedParts.filter((id) => id !== partId) } : emp)),
+        )
+      }
+    } catch (error) {
+      console.error("Failed to update part assignment:", error)
+      throw error
+    }
+  }, [parts, assignments])
+
+  const acceptReturn = useCallback(async (assignmentId: string) => {
+    try {
+      const assignment = assignments.find((a) => a.id === assignmentId)
+      if (!assignment) throw new Error("Assignment not found")
+
+      // Mark assignment as completed
+      const updatedAssignment = {
+        status: "completed" as const,
+        returnDate: new Date().toISOString(),
+      }
+      await updateAssignmentInFirestore(assignmentId, updatedAssignment)
+      setAssignments((prev) =>
+        prev.map((a) =>
+          a.id === assignmentId ? { ...a, ...updatedAssignment } : a
+        )
+      )
+
+      // Update part status to returned with yes status
+      const updatedPartData = {
+        returnStatus: "yes" as const,
+        returnedDate: new Date().toISOString(),
+        pendingReturnApproval: "approved" as const,
+      }
+      await updatePartInFirestore(assignment.partId, updatedPartData)
+      setParts((prev) =>
+        prev.map((p) =>
+          p.id === assignment.partId ? { ...p, ...updatedPartData } : p
+        )
+      )
+
+      // Remove from employee's assigned parts
+      setEmployees((prev) =>
+        prev.map((emp) =>
+          emp.id === assignment.employeeId
+            ? { ...emp, assignedParts: emp.assignedParts.filter((id) => id !== assignment.partId) }
+            : emp
+        )
+      )
+    } catch (error) {
+      console.error("Failed to accept return:", error)
+      throw error
+    }
+  }, [assignments])
+
+  const rejectReturn = useCallback(async (assignmentId: string) => {
+    try {
+      const assignment = assignments.find((a) => a.id === assignmentId)
+      if (!assignment) throw new Error("Assignment not found")
+
+      // Update assignment to mark as active again (reject the return)
+      const updatedAssignment = {
+        status: "active" as const,
+        returnCondition: undefined,
+        notes: assignment.notes + " (Return request rejected by admin)",
+      }
+      await updateAssignmentInFirestore(assignmentId, updatedAssignment)
+      setAssignments((prev) =>
+        prev.map((a) =>
+          a.id === assignmentId ? { ...a, ...updatedAssignment } : a
+        )
+      )
+
+      // Update part status back to assigned with no status
+      const updatedPartData = {
+        status: "assigned" as PartStatus,
+        returnCondition: undefined,
+        returnStatus: "no" as const,
+        pendingReturnApproval: "rejected" as const,
+      }
+      await updatePartInFirestore(assignment.partId, updatedPartData)
+      setParts((prev) =>
+        prev.map((p) =>
+          p.id === assignment.partId ? { ...p, ...updatedPartData } : p
+        )
+      )
+    } catch (error) {
+      console.error("Failed to reject return:", error)
+      throw error
+    }
+  }, [assignments])
+
+  const createAndAssignPart = useCallback(async (partData: Omit<Part, "id">, employeeId: string, notes?: string) => {
+    try {
+      // Create part in Firestore with auto-generated unique ID
+      const newPart = await addPartToFirestore(partData)
+      
+      // Add to local state
+      setParts((prev) => [...prev, newPart])
+      
+      // Create assignment
+      const newAssignment: Assignment = {
+        id: `a${Date.now()}`,
+        partId: newPart.id,
+        employeeId,
+        assignedDate: new Date().toISOString(),
+        status: "active",
+        notes,
+      }
+      
+      // Save assignment to Firestore
+      await addAssignmentToFirestore(newPart.id, employeeId, notes)
+      setAssignments((prev) => [...prev, newAssignment])
+      
+      // Update employee's assigned parts
+      setEmployees((prev) =>
+        prev.map((emp) => (emp.id === employeeId ? { ...emp, assignedParts: [...emp.assignedParts, newPart.id] } : emp))
+      )
+    } catch (error) {
+      console.error("Failed to create and assign part:", error)
+      throw error
+    }
+  }, [])
+
+  const addEmployee = useCallback(async (username: string, password: string) => {
+    try {
+      // Save to Firestore
+      const newEmployee = await addEmployeeToFirestore(username, password)
+      setEmployees((prev) => [...prev, newEmployee])
+    } catch (error) {
+      console.error("Failed to add employee:", error)
+      throw error
+    }
+  }, [])
+
+  const deleteEmployee = useCallback(async (employeeId: string) => {
+    try {
+      // Delete from Firestore
+      await deleteEmployeeFromFirestore(employeeId)
+      setEmployees((prev) => prev.filter((emp) => emp.id !== employeeId))
+    } catch (error) {
+      console.error("Failed to delete employee:", error)
+      throw error
+    }
+  }, [])
+
+  const updateEmployeePassword = useCallback(async (employeeId: string, newPassword: string) => {
+    try {
+      // Update in Firestore
+      await updateEmployeePasswordInFirestore(employeeId, newPassword)
+      setEmployees((prev) =>
+        prev.map((emp) => (emp.id === employeeId ? { ...emp, password: newPassword } : emp))
+      )
+    } catch (error) {
+      console.error("Failed to update employee password:", error)
+      throw error
+    }
   }, [])
 
   const getEmployeeParts = useCallback(
@@ -340,6 +528,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const getPartById = useCallback((partId: string) => parts.find((p) => p.id === partId), [parts])
 
   const getEmployeeById = useCallback((employeeId: string) => employees.find((e) => e.id === employeeId), [employees])
+
+  const updateAssignment = useCallback(async (assignmentId: string, updates: Partial<Assignment>) => {
+    try {
+      await updateAssignmentInFirestore(assignmentId, updates)
+      
+      // Update local state
+      setAssignments(prev => 
+        prev.map(a => a.id === assignmentId ? { ...a, ...updates } : a)
+      )
+    } catch (error) {
+      console.error("Error updating assignment:", error)
+      throw error
+    }
+  }, [])
 
   return (
     <AppContext.Provider
@@ -352,9 +554,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         assignPart,
         returnPart,
         updatePart,
+        updatePartAssignment,
+        acceptReturn,
+        rejectReturn,
+        createAndAssignPart,
+        addEmployee,
+        deleteEmployee,
+        updateEmployeePassword,
         getEmployeeParts,
         getPartById,
         getEmployeeById,
+        updateAssignment,
       }}
     >
       {children}
