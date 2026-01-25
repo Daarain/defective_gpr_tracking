@@ -21,11 +21,18 @@ import {
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Input } from "@/components/ui/input"
 
 export default function AdminDashboard() {
-  const { parts, employees, updatePartAssignment } = useApp()
+  const { parts, employees, updatePartAssignment, updatePart } = useApp()
   const [editingPart, setEditingPart] = useState<string | null>(null)
   const [selectedEmployee, setSelectedEmployee] = useState<string>("")
+  const [completionDetails, setCompletionDetails] = useState({
+    completedStatus: "",
+    completedBy: "",
+    completeDate: "",
+    completedLocation: ""
+  })
 
   // Debug logging
   console.log("Admin Dashboard - Employees:", employees)
@@ -41,27 +48,54 @@ export default function AdminDashboard() {
   ).length
 
   const handleEditClick = (partId: string, currentAssignedTo?: string) => {
+    const part = parts.find(p => p.id === partId)
     setEditingPart(partId)
     setSelectedEmployee(currentAssignedTo || "")
+    if (part) {
+      setCompletionDetails({
+        completedStatus: part.completedStatus || "",
+        completedBy: part.completedBy || "",
+        completeDate: part.completeDate || "",
+        completedLocation: part.completedLocation || ""
+      })
+    }
   }
 
   const handleUpdateAssignment = async () => {
     if (editingPart && selectedEmployee) {
       try {
         await updatePartAssignment(editingPart, selectedEmployee)
-        alert("Engineer assignment updated successfully!")
+        
+        // Update completion details if any are provided
+        if (completionDetails.completedStatus || completionDetails.completedBy || 
+            completionDetails.completeDate || completionDetails.completedLocation) {
+          await updatePart(editingPart, completionDetails)
+        }
+        
+        alert("Engineer assignment and completion details updated successfully!")
       } catch (error) {
-        console.error("Failed to update assignment:", error)
         alert("Failed to update assignment. Please try again.")
       }
       setEditingPart(null)
       setSelectedEmployee("")
+      setCompletionDetails({
+        completedStatus: "",
+        completedBy: "",
+        completeDate: "",
+        completedLocation: ""
+      })
     }
   }
 
   const handleCloseDialog = () => {
     setEditingPart(null)
     setSelectedEmployee("")
+    setCompletionDetails({
+      completedStatus: "",
+      completedBy: "",
+      completeDate: "",
+      completedLocation: ""
+    })
   }
 
   return (
@@ -204,29 +238,108 @@ export default function AdminDashboard() {
 
         {/* Edit Engineer Dialog */}
         <Dialog open={editingPart !== null} onOpenChange={(open) => !open && handleCloseDialog()}>
-          <DialogContent className="w-[95vw] max-w-md p-4 sm:p-6">
+          <DialogContent className="w-[95vw] max-w-2xl p-4 sm:p-6 max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="text-lg sm:text-xl">Edit Engineer Assignment</DialogTitle>
               <DialogDescription className="text-sm">
-                Change the engineer assigned to this part.
+                Change the engineer assigned to this part and update completion details.
               </DialogDescription>
             </DialogHeader>
-            <div className="py-4">
-              <Label htmlFor="edit-employee" className="font-medium text-sm sm:text-base">
-                Assign To Engineer <span className="text-destructive">*</span>
-              </Label>
-              <Select value={selectedEmployee} onValueChange={setSelectedEmployee}>
-                <SelectTrigger id="edit-employee" className="mt-2">
-                  <SelectValue placeholder="Select an engineer" />
-                </SelectTrigger>
-                <SelectContent>
-                  {employees.map((employee) => (
-                    <SelectItem key={employee.id} value={employee.id}>
-                      {employee.username}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="space-y-4 py-4">
+              {/* Assign Engineer */}
+              <div>
+                <Label htmlFor="edit-employee" className="font-medium text-sm sm:text-base">
+                  Assign To Engineer <span className="text-destructive">*</span>
+                </Label>
+                <Select value={selectedEmployee} onValueChange={setSelectedEmployee}>
+                  <SelectTrigger id="edit-employee" className="mt-2">
+                    <SelectValue placeholder="Select an engineer" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {employees.map((employee) => (
+                      <SelectItem key={employee.id} value={employee.id}>
+                        {employee.username}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Completion Details Section */}
+              <div className="border-t pt-4 space-y-4">
+                <h3 className="font-semibold text-sm">Completion Details</h3>
+                
+                {/* Completed Status */}
+                <div>
+                  <Label htmlFor="completed-status" className="text-sm">
+                    Completed Status
+                  </Label>
+                  <Input
+                    id="completed-status"
+                    type="text"
+                    placeholder="e.g., Completed, In Progress"
+                    value={completionDetails.completedStatus}
+                    onChange={(e) => setCompletionDetails(prev => ({
+                      ...prev,
+                      completedStatus: e.target.value
+                    }))}
+                    className="mt-2"
+                  />
+                </div>
+
+                {/* Completed By */}
+                <div>
+                  <Label htmlFor="completed-by" className="text-sm">
+                    Completed By
+                  </Label>
+                  <Input
+                    id="completed-by"
+                    type="text"
+                    placeholder="Engineer name"
+                    value={completionDetails.completedBy}
+                    onChange={(e) => setCompletionDetails(prev => ({
+                      ...prev,
+                      completedBy: e.target.value
+                    }))}
+                    className="mt-2"
+                  />
+                </div>
+
+                {/* Complete Date */}
+                <div>
+                  <Label htmlFor="complete-date" className="text-sm">
+                    Complete Date
+                  </Label>
+                  <Input
+                    id="complete-date"
+                    type="date"
+                    value={completionDetails.completeDate}
+                    onChange={(e) => setCompletionDetails(prev => ({
+                      ...prev,
+                      completeDate: e.target.value
+                    }))}
+                    className="mt-2"
+                  />
+                </div>
+
+                {/* Completed Location */}
+                <div>
+                  <Label htmlFor="completed-location" className="text-sm">
+                    Completed Location
+                  </Label>
+                  <Input
+                    id="completed-location"
+                    type="text"
+                    placeholder="return part location"
+                    value={completionDetails.completedLocation}
+                    onChange={(e) => setCompletionDetails(prev => ({
+                      ...prev,
+                      completedLocation: e.target.value
+                    }))}
+                    className="mt-2"
+                  />
+                </div>
+              </div>
             </div>
             <DialogFooter className="flex-col-reverse gap-2 sm:flex-row sm:gap-0">
               <Button variant="outline" onClick={handleCloseDialog} className="w-full sm:w-auto">
