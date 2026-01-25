@@ -81,12 +81,6 @@ export default function AllotPartsPage() {
       return
     }
 
-    // Validate callId format (alphanumeric only)
-    if (!/^[a-zA-Z0-9_-]+$/.test(formData.callId)) {
-      alert("Call ID must contain only letters, numbers, hyphens, and underscores.")
-      return
-    }
-
     // Validate no script tags or dangerous HTML
     const dangerousPattern = /<script|javascript:|onerror=|onclick=/i
     const fieldsToValidate = [formData.callId, formData.partNo, formData.partDescription, formData.customerName]
